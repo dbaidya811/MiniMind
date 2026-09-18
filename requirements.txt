@@ -8,3 +8,9 @@ bitsandbytes
 fastapi
 uvicorn
 pydantic
+colorama
+diffusers
+pillow
+einops
+torchvision
+moondream
