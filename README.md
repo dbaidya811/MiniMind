@@ -1,6 +1,6 @@
 # MiniMind
 
-![MiniMind](public/downlode.png)
+![MiniMind](public/image1.png)
 
 MiniMind is a lightweight, fully private multimodal AI assistant. It runs entirely on your machine with no cloud dependencies. Built on Qwen2.5-0.5B with LoRA fine-tuning, it supports text chat, image generation (SD-Turbo), and image understanding (Moondream2).
 
@@ -117,7 +117,7 @@ answer = vision.describe_or_answer("photo.jpg", "What is in this image?")
 
 MiniMind includes a local text-to-image engine powered by **Stable Diffusion Turbo**, optimized for near-instant generation with a single inference step.
 
-![Image Generation](public/image_gan.png)
+![Image Generation](public/image2.png)
 
 Use the `/paint` command in the CLI or the `ImageGenerator` class programmatically. Generated images are saved to `outputs/` by default.
 
