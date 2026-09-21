@@ -28,6 +28,17 @@ MiniMind is a lightweight, fully private multimodal AI assistant. It runs entire
 
 ## Installation
 
+### Quick Install (npm - Global)
+
+```bash
+npm install -g minimind-ai
+minimind
+```
+
+This installs MiniMind globally and runs the interactive CLI directly with the `minimind` command.
+
+### Manual Install (Python)
+
 ```bash
 # Clone the repository
 git clone https://github.com/dbaidya811/MiniMind.git
@@ -67,6 +78,12 @@ python src/train.py
 
 ### Interactive CLI
 
+If installed globally via npm:
+```bash
+minimind
+```
+
+Or run directly with Python:
 ```bash
 python app/cli.py
 ```

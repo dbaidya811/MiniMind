@@ -1,5 +1,11 @@
 import sys
 import os
+
+# Set absolute project root dynamically to support execution from anywhere
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 import time
 import re
 import pyperclip
@@ -11,7 +17,6 @@ from rich.table import Table
 from rich.markdown import Markdown
 from rich.live import Live
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.inference import MiniMindEngine
 from src.vision import VisionEngine
 from src.image_gen import ImageGenerator
@@ -133,7 +138,7 @@ def run_cli():
                 history = [{"role": "system", "content": SYSTEM_PROMPT}]
                 continue
 
-            # Vision Command
+            # Vision Task
             if user_input.startswith("/vision"):
                 parts = user_input.split(maxsplit=2)
                 if len(parts) < 2:
@@ -164,7 +169,7 @@ def run_cli():
                 console.print()
                 continue
 
-            # Paint Command
+            # Paint Task
             if user_input.startswith("/paint"):
                 prompt = user_input.replace("/paint", "", 1).strip()
                 if not prompt:
@@ -196,7 +201,7 @@ def run_cli():
                 console.print()
                 continue
 
-            # Text Streaming Output
+            # Text Streaming Response
             history.append({"role": "user", "content": user_input})
             accumulated_response = ""
             latest_stats = {"tokens": 0, "time_sec": 0.0, "speed": 0.0}
@@ -229,7 +234,7 @@ def run_cli():
             history.append({"role": "assistant", "content": accumulated_response})
             console.print()
 
-            # Trigger Code Block Copier
+            # Clipboard Code Extraction
             extract_and_copy_code(accumulated_response)
 
         except KeyboardInterrupt:

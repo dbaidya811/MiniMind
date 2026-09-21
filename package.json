@@ -1,0 +1,32 @@
+{
+  "name": "minimind-ai",
+  "version": "1.0.0",
+  "description": "Terminal-based Autonomous Local AI Assistant",
+  "main": "bin/index.js",
+  "bin": {
+    "minimind": "./bin/index.js"
+  },
+  "scripts": {
+    "start": "node bin/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dbaidya811/MiniMind.git"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "cli",
+    "terminal",
+    "qwen",
+    "local-ai"
+  ],
+  "author": "Deep Baidya",
+  "license": "MIT",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/dbaidya811/MiniMind/issues"
+  },
+  "homepage": "https://github.com/dbaidya811/MiniMind#readme"
+}
