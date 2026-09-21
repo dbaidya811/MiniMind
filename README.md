@@ -159,7 +159,16 @@ python src/merge.py
 ```
 
 Fuses LoRA weights into the base model, exporting to `models/merged_minimind/`.
-
+## Uninstallation
+Remove the NPM package:
+```
+npm uninstall -g minimind-ai
+```
+Clear downloaded model cache
+```
+# Windows PowerShell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\huggingface\hub"
+```
 ## Project Structure
 
 ```
