@@ -26,7 +26,7 @@ MiniMind is a lightweight, fully private multimodal AI assistant. It runs entire
 | Inference Framework | PyTorch, Hugging Face transformers, peft |
 | Recommended Hardware | 8 GB+ RAM (CPU) or 4 GB+ VRAM (GPU) |
 
-## Installation
+<!--## Installation
 
 ### Quick Install (npm - Global)
 
@@ -34,7 +34,7 @@ MiniMind is a lightweight, fully private multimodal AI assistant. It runs entire
 npm install -g minimind-ai
 minimind
 ```
-
+-->
 This installs MiniMind globally and runs the interactive CLI directly with the `minimind` command.
 
 ### Manual Install (Python)
@@ -160,9 +160,10 @@ python src/merge.py
 
 Fuses LoRA weights into the base model, exporting to `models/merged_minimind/`.
 ## Uninstallation
-Remove the NPM package:
+<!--Remove the NPM package:
 ```
 npm uninstall -g minimind-ai
+-->
 ```
 Clear downloaded model cache
 ```
