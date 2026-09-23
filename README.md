@@ -172,7 +172,6 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\huggingface\hub"
 ```
 ## Project Structure
 
-```
 MiniMind/
 ├── app/           # CLI (cli.py) and FastAPI (api.py)
 ├── data/          # train.jsonl and val.jsonl datasets
