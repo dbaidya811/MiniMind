@@ -1,10 +1,11 @@
 {
   "name": "minimind-ai",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Terminal-based Autonomous Local AI Assistant",
   "main": "bin/index.js",
   "bin": {
-    "minimind": "./bin/index.js"
+    "minimind": "bin/index.js",
+    "minimind-ai": "bin/index.js"
   },
   "scripts": {
     "start": "node bin/index.js",
@@ -15,9 +16,9 @@
     "bin",
     "app",
     "src",
-    "models",
     "scripts",
-    "requirements.txt"
+    "requirements.txt",
+    "README.md"
   ],
   "repository": {
     "type": "git",

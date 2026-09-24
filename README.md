@@ -211,11 +211,28 @@ python app/cli.py
 
 On the very first start, MiniMind detects that `models/Qwen2.5-7B-Instruct-Q4_K_M.gguf` is missing and **streams it down automatically from Hugging Face** (≈ 4.4 GB). Once the engine is ready you'll land in the interactive prompt.
 
-### Alternative launchers
+### Install via npm (optional — global CLI)
+
+MiniMind is published on npm as [`minimind-ai`](https://www.npmjs.com/package/minimind-ai). The npm wrapper launches the Python CLI (using your `venv` when present), so it works side-by-side with the manual setup above.
+
+```bash
+# 1) Install globally — provides the `minimind` command everywhere
+npm install -g minimind-ai
+
+# 2) Run MiniMind
+minimind
+```
+
+> **Prefer zero-install?** Run the same CLI on the fly with `npx` — no global install needed:
+>
+> ```bash
+> npx minimind-ai
+> ```
 
 | Method | Command |
 | :--- | :--- |
 | Global npm CLI | `npm install -g minimind-ai` → `minimind` |
+| One-off (no install) | `npx minimind-ai` |
 | Windows PATH helper | double-click `install_path.bat`, restart the terminal → `minimind` |
 | Windows launcher | `minimind.cmd` |
 
@@ -228,7 +245,14 @@ On the very first start, MiniMind detects that `models/Qwen2.5-7B-Instruct-Q4_K_
 Run it and just talk — **no slash-commands to memorize**:
 
 ```bash
+# From source (recommended)
 python app/cli.py
+
+# Or via npm — after `npm install -g minimind-ai`
+minimind
+
+# One-off via npx (no global install required)
+npx minimind-ai
 ```
 
 | You say… | MiniMind does… |

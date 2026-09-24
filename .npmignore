@@ -1,7 +1,9 @@
+models/
+*.gguf
 venv/
+.venv/
 __pycache__/
-*.png
-*.jpg
-outputs/
+*.pyc
 .git/
-.env
+downloads/
+*.log
