@@ -1,3 +1,6 @@
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+--prefer-binary
+
 # Deep Learning Core & Acceleration
 torch
 torchvision
