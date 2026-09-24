@@ -395,7 +395,7 @@ MiniMind/
 
 ## 👤 Author & Credits
 
-Built with ❤️ by **Deep Baidya** — Full-Stack Software Developer & BCA student at Greater Kolkata College of Engineering & Management (GKCEM).
+Built with ❤️ by **Deep Baidya** — Full-Stack Software Developer.
 
 - 🐙 GitHub — [@dbaidya811](https://github.com/dbaidya811)
 - 📦 npm — [`minimind-ai`](https://www.npmjs.com/package/minimind-ai) (optional global install)
