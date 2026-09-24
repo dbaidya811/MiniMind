@@ -1,298 +1,473 @@
 import os
+import sys
 import subprocess
-import platform
+import csv
 import re
+import tempfile
 from pathlib import Path
-from typing import Dict, Any
+from typing import Optional, Dict, Any, List
+
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.enum.shapes import MSO_SHAPE
+
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+
+try:
+    from docx import Document
+    from docx.shared import Pt as DocxPt, Inches as DocxInches, RGBColor as DocxRGBColor
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+except ImportError:
+    Document = None
+
 
 class SystemTools:
     @staticmethod
     def get_downloads_dir() -> Path:
-        downloads = Path.home() / "Downloads"
-        downloads.mkdir(parents=True, exist_ok=True)
-        return downloads
+        return Path.home() / "Downloads"
 
     @staticmethod
-    def create_ppt_file(filename: str, content: str, image_generator=None, topic: str = "Presentation") -> Dict[str, Any]:
-        """Creates an executive, content-dense PowerPoint (.pptx) deck with clean typography and balanced layout."""
-        if not filename.lower().endswith(".pptx"):
-            filename += ".pptx"
-        target = SystemTools.get_downloads_dir() / filename
-
+    def _generate_dynamic_chart(title: str, chart_type: str = "bar", categories: list = None, values: list = None) -> Optional[str]:
+        if not MATPLOTLIB_AVAILABLE:
+            return None
         try:
-            from pptx import Presentation
-            from pptx.util import Inches, Pt
-            from pptx.dml.color import RGBColor
-            from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-            from pptx.enum.shapes import MSO_SHAPE
+            temp_dir = tempfile.gettempdir()
+            chart_path = os.path.join(temp_dir, f"chart_{os.getpid()}_{hash(title) % 10000}.png")
+            plt.figure(figsize=(6, 4.2), dpi=150)
+            
+            colors = ["#2563EB", "#F97316", "#10B981", "#8B5CF6", "#64748B"]
+            clean_title = re.sub(r"[^\w\s-]", "", title)[:30]
+
+            if chart_type == "pie":
+                labels = categories or ["Core Architecture", "Data Pipeline", "Model Inference", "System Ops"]
+                vals = values or [35, 25, 25, 15]
+                plt.pie(vals[:len(labels)], labels=labels[:4], autopct="%1.1f%%", startangle=140, colors=colors,
+                        textprops={'fontsize': 10, 'color': '#0F172A', 'weight': 'bold'})
+                plt.title(f"{clean_title} Distribution", fontsize=11, fontweight='bold', pad=12, color="#0F172A")
+            else:
+                cats = categories or ["Phase 1", "Phase 2", "Phase 3", "Target"]
+                vals = values or [25, 45, 75, 100]
+                bars = plt.bar(cats[:4], vals[:4], color="#2563EB", width=0.5, edgecolor="#1D4ED8")
+                plt.title(f"{clean_title} Metric Overview", fontsize=11, fontweight='bold', pad=12, color="#0F172A")
+                plt.ylabel("Index / Score", fontsize=9, color="#64748B")
+                for bar in bars:
+                    yval = bar.get_height()
+                    plt.text(bar.get_x() + bar.get_width()/2.0, yval + 1, f"{yval}", ha='center', va='bottom', fontsize=8, fontweight='bold')
+
+            plt.tight_layout()
+            plt.savefig(chart_path, dpi=150, bbox_inches="tight", facecolor="#F8FAFC")
+            plt.close()
+            return chart_path
+        except Exception:
+            return None
+
+    @staticmethod
+    def create_ppt_structured(
+        filename: str,
+        slides_data: List[Dict[str, Any]],
+        image_generator=None,
+        topic: str = "Presentation"
+    ) -> Dict[str, Any]:
+        """
+        Builds presentation based on CoT analyzed slide objects with targeted visual prompts.
+        """
+        try:
+            downloads = SystemTools.get_downloads_dir()
+            target_path = downloads / filename
 
             prs = Presentation()
             prs.slide_width = Inches(13.333)
             prs.slide_height = Inches(7.5)
-            blank_layout = prs.slide_layouts[6]
 
-            COLOR_BG = RGBColor(15, 23, 42)          # Deep Slate
-            COLOR_CARD = RGBColor(30, 41, 59)        # Card Background
-            COLOR_ACCENT = RGBColor(217, 119, 87)    # Accent Orange
-            COLOR_CYAN = RGBColor(56, 189, 248)      # Highlight Cyan
-            COLOR_WHITE = RGBColor(248, 250, 252)    # Title White
-            COLOR_MUTED = RGBColor(203, 213, 225)    # Body Text
+            NAVY_BG = RGBColor(15, 23, 42)
+            ACCENT_CORAL = RGBColor(249, 115, 22)
+            CARD_BG = RGBColor(248, 250, 252)
+            BORDER_COLOR = RGBColor(226, 232, 240)
+            TEXT_DARK = RGBColor(30, 41, 59)
+            TEXT_LIGHT = RGBColor(255, 255, 255)
 
-            raw_slides = [s.strip() for s in re.split(r"(?:^|\n)(?:---|===)", content) if s.strip()]
-            if not raw_slides:
-                raw_slides = [content]
+            for idx, s in enumerate(slides_data):
+                slide = prs.slides.add_slide(prs.slide_layouts[6])
+                title = s.get("title", f"Slide {idx + 1}")
+                summary = s.get("summary", "")
+                points = s.get("points", [])
+                image_prompt = s.get("image_prompt", "")
+                chart_type = s.get("chart_type", "none")
 
-            generated_img_path = None
-            if image_generator:
-                try:
-                    img_prompt = f"concept visual representation of {topic}, high quality digital illustration, dark cinematic aesthetic"
-                    generated_img_path = image_generator.generate(img_prompt)
-                except Exception:
-                    generated_img_path = None
-
-            def clean_text(text: str) -> str:
-                t = re.sub(r"\*\*|\*", "", text)
-                t = re.sub(r"^slide\s*\d+\s*:\s*", "", t, flags=re.IGNORECASE)
-                t = re.sub(r"^title\s*slide\s*:\s*", "", t, flags=re.IGNORECASE)
-                return t.strip()
-
-            for idx, slide_text in enumerate(raw_slides):
-                slide = prs.slides.add_slide(blank_layout)
-
-                bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, prs.slide_height)
-                bg.fill.solid()
-                bg.fill.fore_color.rgb = COLOR_BG
-                bg.line.fill.background()
-
-                raw_lines = [l.strip() for l in slide_text.split("\n") if l.strip()]
-                if not raw_lines:
-                    continue
-
+                # SLIDE 1: Cover Page
                 if idx == 0:
-                    top_bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, Inches(0.12))
-                    top_bar.fill.solid()
-                    top_bar.fill.fore_color.rgb = COLOR_ACCENT
-                    top_bar.line.fill.background()
+                    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(13.333), Inches(7.5))
+                    bg.fill.solid()
+                    bg.fill.fore_color.rgb = NAVY_BG
+                    bg.line.fill.background()
 
-                    title_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.2), Inches(7.5), Inches(3.5))
-                    tf = title_box.text_frame
-                    tf.word_wrap = True
-
-                    p_tag = tf.paragraphs[0]
-                    p_tag.text = "MINIMIND RESEARCH & INTELLIGENCE"
-                    p_tag.font.bold = True
-                    p_tag.font.size = Pt(13)
-                    p_tag.font.color.rgb = COLOR_CYAN
-
-                    main_title = clean_text(raw_lines[0]) or topic.title()
-                    p_title = tf.add_paragraph()
-                    p_title.text = main_title
-                    p_title.font.bold = True
-                    p_title.font.size = Pt(36)
-                    p_title.font.color.rgb = COLOR_WHITE
-                    p_title.space_before = Pt(16)
-                    p_title.space_after = Pt(14)
-
-                    sub_lines = [clean_text(x) for x in raw_lines[1:] if clean_text(x)]
-                    sub_text = " | ".join(sub_lines) if sub_lines else f"A structured overview covering key architectures and applications in {topic}."
-                    p_sub = tf.add_paragraph()
-                    p_sub.text = sub_text
-                    p_sub.font.size = Pt(15)
-                    p_sub.font.color.rgb = COLOR_MUTED
-
-                    if generated_img_path and os.path.exists(generated_img_path):
+                    hero_img = None
+                    if image_generator and image_prompt:
                         try:
-                            img_frame = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(8.8), Inches(1.5), Inches(3.6), Inches(4.5))
-                            img_frame.fill.solid()
-                            img_frame.fill.fore_color.rgb = COLOR_CARD
-                            img_frame.line.color.rgb = COLOR_ACCENT
-                            slide.shapes.add_picture(generated_img_path, Inches(8.9), Inches(1.6), width=Inches(3.4), height=Inches(4.3))
+                            hero_img = image_generator.generate(image_prompt)
+                        except Exception:
+                            hero_img = None
+
+                    if hero_img and os.path.exists(hero_img):
+                        try:
+                            slide.shapes.add_picture(hero_img, Inches(7.3), Inches(1.1), Inches(5.2), Inches(5.3))
                         except Exception:
                             pass
+                        text_width = Inches(5.8)
+                    else:
+                        text_width = Inches(11.0)
 
+                    bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.0), Inches(1.8), Inches(1.8), Inches(0.12))
+                    bar.fill.solid()
+                    bar.fill.fore_color.rgb = ACCENT_CORAL
+                    bar.line.fill.background()
+
+                    tb = slide.shapes.add_textbox(Inches(1.0), Inches(2.2), text_width, Inches(4.5))
+                    tf = tb.text_frame
+                    tf.word_wrap = True
+
+                    p_title = tf.paragraphs[0]
+                    p_title.text = title
+                    p_title.font.size = Pt(38)
+                    p_title.font.bold = True
+                    p_title.font.color.rgb = TEXT_LIGHT
+
+                    p_sub = tf.add_paragraph()
+                    p_sub.text = f"\n{summary or 'In-depth architectural analysis and operational strategic deck.'}"
+                    p_sub.font.size = Pt(15)
+                    p_sub.font.color.rgb = RGBColor(203, 213, 225)
+                    continue
+
+                # SLIDES 2+: Header + Card Layout
+                top_bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(13.333), Inches(1.2))
+                top_bg.fill.solid()
+                top_bg.fill.fore_color.rgb = NAVY_BG
+                top_bg.line.fill.background()
+
+                accent_line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(1.15), Inches(13.333), Inches(0.05))
+                accent_line.fill.solid()
+                accent_line.fill.fore_color.rgb = ACCENT_CORAL
+                accent_line.line.fill.background()
+
+                top_tb = slide.shapes.add_textbox(Inches(1.0), Inches(0.25), Inches(11.3), Inches(0.7))
+                top_tf = top_tb.text_frame
+                top_tf.word_wrap = True
+                p_top = top_tf.paragraphs[0]
+                p_top.text = title
+                p_top.font.size = Pt(22)
+                p_top.font.bold = True
+                p_top.font.color.rgb = TEXT_LIGHT
+
+                visual_path = None
+                if chart_type in ["bar", "pie"]:
+                    visual_path = SystemTools._generate_dynamic_chart(title, chart_type=chart_type)
+                elif image_generator and image_prompt and (idx % 2 == 1 or idx == 1):
+                    try:
+                        visual_path = image_generator.generate(image_prompt)
+                    except Exception:
+                        visual_path = None
+
+                # Layout with Right-side Visual
+                if visual_path and os.path.exists(visual_path):
+                    card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.9), Inches(1.6), Inches(6.8), Inches(5.3))
+                    card.fill.solid()
+                    card.fill.fore_color.rgb = CARD_BG
+                    card.line.color.rgb = BORDER_COLOR
+
+                    tb = slide.shapes.add_textbox(Inches(1.2), Inches(1.8), Inches(6.2), Inches(4.9))
+                    tf = tb.text_frame
+                    tf.word_wrap = True
+
+                    if summary:
+                        ps = tf.paragraphs[0]
+                        ps.text = summary
+                        ps.font.size = Pt(13)
+                        ps.font.bold = True
+                        ps.font.color.rgb = RGBColor(15, 23, 42)
+                        ps.space_after = Pt(10)
+
+                    for pt in points:
+                        p = tf.add_paragraph()
+                        p.text = f"• {pt}"
+                        p.font.size = Pt(12)
+                        p.font.color.rgb = TEXT_DARK
+                        p.space_after = Pt(10)
+
+                    try:
+                        slide.shapes.add_picture(visual_path, Inches(8.0), Inches(1.6), Inches(4.5), Inches(5.3))
+                    except Exception:
+                        pass
                 else:
-                    header_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.6), Inches(11.5), Inches(0.8))
-                    htf = header_box.text_frame
-                    htf.word_wrap = True
+                    # 2-column or wide card layout
+                    col_width = Inches(5.5)
+                    mid = (len(points) + 1) // 2
+                    col_data = [points[:mid], points[mid:]] if len(points) >= 2 else [points, []]
 
-                    h_p = htf.paragraphs[0]
-                    h_p.text = clean_text(raw_lines[0])
-                    h_p.font.bold = True
-                    h_p.font.size = Pt(26)
-                    h_p.font.color.rgb = COLOR_WHITE
+                    if col_data[1]:
+                        for c_i, c_items in enumerate(col_data):
+                            left = Inches(0.9 + (c_i * 6.0))
+                            card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, Inches(1.6), col_width, Inches(5.3))
+                            card.fill.solid()
+                            card.fill.fore_color.rgb = CARD_BG
+                            card.line.color.rgb = BORDER_COLOR
 
-                    divider = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.8), Inches(1.4), Inches(2.2), Inches(0.04))
-                    divider.fill.solid()
-                    divider.fill.fore_color.rgb = COLOR_ACCENT
-                    divider.line.fill.background()
+                            tb = slide.shapes.add_textbox(left + Inches(0.3), Inches(1.8), col_width - Inches(0.6), Inches(4.9))
+                            tf = tb.text_frame
+                            tf.word_wrap = True
+                            for item in c_items:
+                                p = tf.add_paragraph()
+                                p.text = f"• {item}"
+                                p.font.size = Pt(13)
+                                p.font.color.rgb = TEXT_DARK
+                                p.space_after = Pt(14)
+                    else:
+                        card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.9), Inches(1.6), Inches(11.5), Inches(5.3))
+                        card.fill.solid()
+                        card.fill.fore_color.rgb = CARD_BG
+                        card.line.color.rgb = BORDER_COLOR
 
-                    points = []
-                    for line in raw_lines[1:]:
-                        cleaned = clean_text(line).lstrip("-*•> ").strip()
-                        if cleaned:
-                            points.append(cleaned)
+                        tb = slide.shapes.add_textbox(Inches(1.3), Inches(1.9), Inches(10.7), Inches(4.7))
+                        tf = tb.text_frame
+                        tf.word_wrap = True
+                        for item in points:
+                            p = tf.add_paragraph()
+                            p.text = f"• {item}"
+                            p.font.size = Pt(14)
+                            p.font.color.rgb = TEXT_DARK
+                            p.space_after = Pt(16)
 
-                    if not points:
-                        points = [
-                            "Comprehensive technical review and foundational principles.",
-                            "Execution considerations and performance trade-offs."
-                        ]
-
-                    card_width = Inches(3.6)
-                    card_gap = Inches(0.4)
-                    start_x = Inches(0.8)
-
-                    for c_idx, point_text in enumerate(points[:3]):
-                        cx = start_x + (c_idx * (card_width + card_gap))
-                        card_shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, cx, Inches(1.8), card_width, Inches(5.1))
-                        card_shape.fill.solid()
-                        card_shape.fill.fore_color.rgb = COLOR_CARD
-                        card_shape.line.color.rgb = COLOR_ACCENT if c_idx == 0 else COLOR_CARD
-                        card_shape.line.width = Pt(1.5)
-
-                        ctf = card_shape.text_frame
-                        ctf.vertical_anchor = MSO_ANCHOR.TOP
-                        ctf.word_wrap = True
-                        ctf.margin_left = Inches(0.2)
-                        ctf.margin_right = Inches(0.2)
-                        ctf.margin_top = Inches(0.25)
-                        ctf.margin_bottom = Inches(0.2)
-
-                        p_num = ctf.paragraphs[0]
-                        p_num.text = f"PILLAR 0{c_idx + 1}"
-                        p_num.font.bold = True
-                        p_num.font.size = Pt(10)
-                        p_num.font.color.rgb = COLOR_CYAN
-                        p_num.space_after = Pt(8)
-
-                        if ":" in point_text:
-                            p_title_str, p_desc_str = point_text.split(":", 1)
-                            p_card_title = ctf.add_paragraph()
-                            p_card_title.text = p_title_str.strip()
-                            p_card_title.font.bold = True
-                            p_card_title.font.size = Pt(15)
-                            p_card_title.font.color.rgb = COLOR_WHITE
-                            p_card_title.space_after = Pt(6)
-
-                            p_body = ctf.add_paragraph()
-                            p_body.text = p_desc_str.strip()
-                            p_body.font.size = Pt(11)
-                            p_body.font.color.rgb = COLOR_MUTED
-                            p_body.line_spacing = 1.15
-                        else:
-                            p_body = ctf.add_paragraph()
-                            p_body.text = point_text
-                            p_body.font.size = Pt(12)
-                            p_body.font.color.rgb = COLOR_WHITE
-                            p_body.line_spacing = 1.15
-
-            prs.save(str(target))
-            return {"status": "success", "path": str(target), "filename": filename}
-
-        except ImportError:
-            txt_path = target.with_suffix(".txt")
-            with open(txt_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return {"status": "warning", "path": str(txt_path), "message": "python-pptx missing. Saved as txt."}
-        except Exception as e:
-            return {"status": "error", "message": str(e), "path": str(target)}
-
-    @staticmethod
-    def create_word_file(filename: str, content: str) -> Dict[str, Any]:
-        if not filename.endswith(".docx"):
-            filename += ".docx"
-        target = SystemTools.get_downloads_dir() / filename
-        try:
-            import docx
-            doc = docx.Document()
-            for line in content.strip().split("\n"):
-                l = line.strip()
-                if l.startswith("# "):
-                    doc.add_heading(l.replace("# ", ""), level=1)
-                elif l.startswith("## "):
-                    doc.add_heading(l.replace("## ", ""), level=2)
-                elif l.startswith("### "):
-                    doc.add_heading(l.replace("### ", ""), level=3)
-                elif l:
-                    doc.add_paragraph(l)
-            doc.save(str(target))
-            return {"status": "success", "path": str(target), "filename": filename}
-        except Exception as e:
-            return {"status": "error", "message": str(e), "path": str(target)}
-
-    @staticmethod
-    def create_excel_file(filename: str, content: str) -> Dict[str, Any]:
-        if not filename.endswith(".xlsx"):
-            filename += ".xlsx"
-        target = SystemTools.get_downloads_dir() / filename
-        try:
-            import openpyxl
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Sheet1"
-            for r_idx, line in enumerate(content.strip().split("\n"), start=1):
-                clean_line = line.strip().strip("|")
-                cols = [c.strip() for c in clean_line.replace("|", ",").split(",") if c.strip()]
-                for c_idx, val in enumerate(cols, start=1):
-                    ws.cell(row=r_idx, column=c_idx, value=val)
-            wb.save(str(target))
-            return {"status": "success", "path": str(target), "filename": filename}
-        except Exception as e:
-            return {"status": "error", "message": str(e), "path": str(target)}
-
-    @staticmethod
-    def update_or_create_file(file_name: str, content: str, mode: str = "w") -> Dict[str, Any]:
-        target = Path(file_name).expanduser()
-        if not target.is_absolute():
-            target = SystemTools.get_downloads_dir() / target
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with open(target, mode, encoding="utf-8") as f:
-                f.write(content)
-            return {"status": "success", "path": str(target), "filename": target.name}
-        except Exception as e:
-            return {"status": "error", "message": str(e), "path": str(target)}
-
-    @staticmethod
-    def list_directory(path: str = None) -> Dict[str, Any]:
-        target = SystemTools.get_downloads_dir() if not path or path == "." else Path(path).expanduser().resolve()
-        if not target.exists():
-            return {"status": "error", "message": f"Path not found: {path}"}
-        try:
-            items = [{"name": it.name, "type": "folder" if it.is_dir() else "file", "size_bytes": it.stat().st_size if it.is_file() else 0} for it in target.iterdir()]
-            return {"status": "success", "path": str(target), "items": items[:50]}
+            prs.save(target_path)
+            return {"status": "success", "path": str(target_path)}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     @staticmethod
-    def read_file(file_path: str) -> Dict[str, Any]:
-        target = Path(file_path).expanduser()
-        if not target.is_absolute():
-            target = SystemTools.get_downloads_dir() / target
-        if not target.exists() or not target.is_file():
-            return {"status": "error", "message": f"File not found: {str(target)}"}
+    def create_word_file(filename: str, content: str) -> Dict[str, Any]:
+        """Generates an executive-styled Word document (.docx) with cover styling and section formatting."""
+        if Document is None:
+            return {"status": "error", "message": "python-docx package is not installed."}
+
         try:
-            with open(target, "r", encoding="utf-8", errors="ignore") as f:
-                return {"status": "success", "content": f.read(4000), "path": str(target)}
+            downloads = SystemTools.get_downloads_dir()
+            target_path = downloads / filename
+
+            doc = Document()
+            sections = doc.sections
+            for section in sections:
+                section.top_margin = DocxInches(1.0)
+                section.bottom_margin = DocxInches(1.0)
+                section.left_margin = DocxInches(1.0)
+                section.right_margin = DocxInches(1.0)
+
+            lines = content.splitlines()
+            for line in lines:
+                s_line = line.strip()
+                if not s_line:
+                    continue
+
+                if s_line.startswith("# "):
+                    h1 = doc.add_heading(s_line[2:].strip(), level=1)
+                    h1.style.font.name = "Segoe UI"
+                    h1.style.font.size = DocxPt(22)
+                    h1.style.font.bold = True
+                    h1.style.font.color.rgb = DocxRGBColor(15, 23, 42)
+                elif s_line.startswith("## "):
+                    h2 = doc.add_heading(s_line[3:].strip(), level=2)
+                    h2.style.font.name = "Segoe UI"
+                    h2.style.font.size = DocxPt(15)
+                    h2.style.font.bold = True
+                    h2.style.font.color.rgb = DocxRGBColor(37, 99, 235)
+                elif s_line.startswith("### "):
+                    h3 = doc.add_heading(s_line[4:].strip(), level=3)
+                    h3.style.font.name = "Segoe UI"
+                    h3.style.font.size = DocxPt(12)
+                    h3.style.font.bold = True
+                    h3.style.font.color.rgb = DocxRGBColor(30, 41, 59)
+                elif s_line.startswith(("- ", "* ")):
+                    p = doc.add_paragraph(s_line[2:].strip(), style="List Bullet")
+                    p.style.font.name = "Segoe UI"
+                    p.style.font.size = DocxPt(10.5)
+                elif s_line.startswith("> "):
+                    p = doc.add_paragraph(s_line[2:].strip())
+                    p.style.font.name = "Segoe UI"
+                    p.style.font.italic = True
+                    p.style.font.color.rgb = DocxRGBColor(71, 85, 105)
+                else:
+                    p = doc.add_paragraph(s_line)
+                    p.style.font.name = "Segoe UI"
+                    p.style.font.size = DocxPt(10.5)
+
+            doc.save(target_path)
+            return {"status": "success", "path": str(target_path)}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    @staticmethod
+    def create_excel_file(filename: str, content: str) -> Dict[str, Any]:
+        try:
+            downloads = SystemTools.get_downloads_dir()
+            target_path = downloads / filename
+
+            counter = 1
+            base_name = Path(filename).stem
+            ext = Path(filename).suffix or ".xlsx"
+            while target_path.exists():
+                try:
+                    with open(target_path, "a"):
+                        break
+                except PermissionError:
+                    target_path = downloads / f"{base_name}_{counter}{ext}"
+                    counter += 1
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "DataSheet"
+
+            raw_lines = [line.strip() for line in content.strip().splitlines() if line.strip()]
+            clean_lines = [l for l in raw_lines if not l.lower().startswith(("here is", "sure", "certainly", "```", "---"))]
+
+            parsed_rows = []
+            for line in clean_lines:
+                if "," in line:
+                    row_data = next(csv.reader([line], skipinitialspace=True))
+                elif "\t" in line:
+                    row_data = line.split("\t")
+                else:
+                    row_data = [x.strip() for x in line.split("|") if x.strip()]
+                row_data = [c.strip().strip('"').strip("'") for c in row_data]
+                if any(row_data):
+                    parsed_rows.append(row_data)
+
+            if not parsed_rows:
+                return {"status": "error", "message": "No valid tabular data found"}
+
+            max_cols = max(len(r) for r in parsed_rows)
+            header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+            header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+            zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+            regular_font = Font(name="Segoe UI", size=10)
+            thin_border = Border(
+                left=Side(style="thin", color="E2E8F0"),
+                right=Side(style="thin", color="E2E8F0"),
+                top=Side(style="thin", color="E2E8F0"),
+                bottom=Side(style="thin", color="E2E8F0")
+            )
+
+            for r_idx, row in enumerate(parsed_rows, start=1):
+                padded_row = row + [""] * (max_cols - len(row))
+                for c_idx, val_str in enumerate(padded_row, start=1):
+                    cell = ws.cell(row=r_idx, column=c_idx)
+                    cell.border = thin_border
+                    num_clean = val_str.replace(",", "").replace("$", "").replace("%", "").strip()
+                    try:
+                        if "." in num_clean:
+                            cell.value = float(num_clean)
+                        elif num_clean.isdigit():
+                            cell.value = int(num_clean)
+                        else:
+                            cell.value = val_str
+                    except ValueError:
+                        cell.value = val_str
+
+                    if r_idx == 1:
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    else:
+                        cell.font = regular_font
+                        cell.alignment = Alignment(horizontal="right" if isinstance(cell.value, (int, float)) else "left", vertical="center")
+                        if r_idx % 2 == 0:
+                            cell.fill = zebra_fill
+
+            for col in ws.columns:
+                max_len = max(len(str(cell.value or "")) for cell in col)
+                col_letter = get_column_letter(col[0].column)
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 15)
+
+            wb.save(target_path)
+            return {"status": "success", "path": str(target_path)}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    @staticmethod
+    def update_or_create_file(filename: str, content: str, mode: str = "w") -> Dict[str, Any]:
+        try:
+            downloads = SystemTools.get_downloads_dir()
+            target_path = downloads / filename
+            with open(target_path, mode, encoding="utf-8") as f:
+                f.write(content)
+            return {"status": "success", "path": str(target_path)}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    @staticmethod
+    def read_file(path_str: str) -> Dict[str, Any]:
+        try:
+            p = Path(path_str)
+            if not p.is_absolute():
+                p = SystemTools.get_downloads_dir() / path_str
+            if not p.exists():
+                return {"status": "error", "message": f"File not found: {p}"}
+            with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            return {"status": "success", "path": str(p), "content": content}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     @staticmethod
     def launch_app(app_name: str) -> Dict[str, Any]:
-        cmd = app_name.lower().strip()
-        alias_map = {
-            "vscode": "code",
-            "vs code": "code",
-            "word": "winword",
-            "excel": "excel",
-            "powerpoint": "powerpnt",
-            "notepad": "notepad",
-            "chrome": "chrome",
-            "calculator": "calc"
-        }
-        cmd = alias_map.get(cmd, cmd)
+        app_lower = app_name.lower().strip()
+        cmd = None
+        if sys.platform == "win32":
+            mapping = {
+                "vscode": "code", "code": "code", "chrome": "start chrome",
+                "browser": "start chrome", "notepad": "notepad", "calc": "calc",
+                "calculator": "calc", "explorer": "explorer",
+                "downloads": f'explorer "{SystemTools.get_downloads_dir()}"'
+            }
+            cmd = mapping.get(app_lower, app_lower)
+        else:
+            mapping = {
+                "vscode": "code", "code": "code", "chrome": "google-chrome",
+                "browser": "google-chrome", "calc": "gnome-calculator", "calculator": "gnome-calculator"
+            }
+            cmd = mapping.get(app_lower, app_lower)
         try:
             subprocess.Popen(cmd, shell=True)
-            return {"status": "success", "message": f"Launched '{app_name}'"}
+            return {"status": "success", "message": f"Launched application: {app_name}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    @staticmethod
+    def list_directory(dir_path: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            target = Path(dir_path) if dir_path else SystemTools.get_downloads_dir()
+            if not target.is_absolute():
+                target = SystemTools.get_downloads_dir() / target
+            if not target.exists() or not target.is_dir():
+                return {"status": "error", "message": f"Invalid directory path: {target}"}
+            items = []
+            for item in target.iterdir():
+                items.append({
+                    "name": item.name,
+                    "type": "folder" if item.is_dir() else "file",
+                    "size_bytes": item.stat().st_size if item.is_file() else 0
+                })
+            return {"status": "success", "path": str(target), "items": items}
         except Exception as e:
             return {"status": "error", "message": str(e)}

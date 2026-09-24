@@ -8,24 +8,25 @@ from llama_cpp import Llama
 class MiniMindEngine:
     def __init__(
         self,
-        model_path: str = "models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-        repo_id: str = "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-        filename: str = "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        model_path: str = "models/qwen2.5-7b-instruct-q4_k_m.gguf",
+        repo_id: str = "bartowski/Qwen2.5-7B-Instruct-GGUF",
+        filename: str = "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
         n_ctx: int = 4096,
-        n_threads: int = 6
+        n_threads: int = 8
     ):
         self.model_path = Path(model_path)
         self.repo_id = repo_id
         self.filename = filename
         
-        # 1. Check if model exists locally; if not, download automatically
+        # 1. Download model if missing locally
         self._ensure_model_exists()
 
-        # 2. Initialize the Llama engine
+        # 2. Initialize the local llama engine with tuned batch size for fast prompt processing
         self.llm = Llama(
             model_path=str(self.model_path),
             n_ctx=n_ctx,
             n_threads=n_threads,
+            n_batch=512,        # Prompt evaluation faster korar jonno batch size tuned
             verbose=False
         )
 
@@ -33,23 +34,30 @@ class MiniMindEngine:
         """Checks if local model exists; if not, downloads directly into models/ directory."""
         if not self.model_path.exists():
             print(f"\n[MiniMind Engine] Model not found locally at '{self.model_path}'.")
-            print(f"[MiniMind Engine] Downloading {self.filename} from Hugging Face hub...")
+            print(f"[MiniMind Engine] Downloading {self.filename} from Hugging Face hub (7B Q4_K_M)...")
             
-            # Create models/ directory if it does not exist
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Download file into models/ folder
             downloaded_file = hf_hub_download(
                 repo_id=self.repo_id,
                 filename=self.filename,
                 local_dir=str(self.model_path.parent),
                 local_dir_use_symlinks=False
             )
-            print(f"[MiniMind Engine] Download complete! Model saved to: {downloaded_file}\n")
 
-    def generate_stream(self, messages: list, max_new_tokens: int = 2048, temperature: float = 0.3):
+            # Match destination file naming if case differs
+            downloaded_path = Path(downloaded_file)
+            if downloaded_path.exists() and downloaded_path.resolve() != self.model_path.resolve():
+                if self.model_path.exists():
+                    self.model_path.unlink()
+                downloaded_path.rename(self.model_path)
+
+            print(f"[MiniMind Engine] Download complete! Model saved to: {self.model_path}\n")
+
+    def generate_stream(self, messages: list, max_new_tokens: int = 2048, temperature: float = 0.2):
         """
         Yields chunks of text as they are generated, along with generation metrics.
+        repeat_penalty is configured to strictly prevent repetitive hallucination loops.
         """
         start_time = time.perf_counter()
         token_count = 0
@@ -58,6 +66,7 @@ class MiniMindEngine:
             messages=messages,
             max_tokens=max_new_tokens,
             temperature=temperature,
+            repeat_penalty=1.18,
             stream=True
         )
 
