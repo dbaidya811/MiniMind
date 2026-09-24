@@ -14,18 +14,14 @@ venv.bak/
 models/*.gguf
 models/.cache/
 models/final_adapter/
-outputs/
-*.bin
-*.pt
-*.pth
-*.safetensors
+
 
 # Hugging Face & Tokenizer cache
 huggingface_tokenizers_cache/
 unsloth_compiled_cache/
 
 # User downloads, generated media & temporary exports
-data/
+
 downloads/
 *.pptx
 *.docx
