@@ -1,0 +1,41 @@
+# Deep Learning Core & Acceleration
+torch
+torchvision
+accelerate
+bitsandbytes
+peft
+trl
+
+# GGUF Engine & Local Inference
+llama-cpp-python
+huggingface-hub
+
+# Hugging Face Ecosystem & Models
+transformers
+diffusers
+datasets
+einops
+moondream
+sentencepiece
+protobuf
+
+# Computer Vision & Image Processing
+pillow
+
+# Office & Document Automation Engine
+python-docx
+openpyxl
+python-pptx
+
+# Web Search & RAG
+duckduckgo-search
+
+# CLI UI, Terminal Utilities & Clipboard
+rich
+pyperclip
+colorama
+
+# Backend API & Server Runtime
+fastapi
+uvicorn[standard]
+pydantic
