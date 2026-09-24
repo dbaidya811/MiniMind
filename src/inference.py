@@ -1,100 +1,78 @@
+import sys
+import os
 import time
-from threading import Thread
-from typing import Generator, Tuple, Dict, Any, List
-import torch
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    TextIteratorStreamer,
-    AutoConfig
-)
+from pathlib import Path
+from huggingface_hub import hf_hub_download
+from llama_cpp import Llama
 
 class MiniMindEngine:
-    def __init__(self, model_id: str = "Qwen/Qwen2.5-0.5B-Instruct"):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_id = model_id
-
-        # 32k context configuration
-        self.config = AutoConfig.from_pretrained(self.model_id)
-        self.config.max_position_embeddings = 32768
-        if hasattr(self.config, "sliding_window"):
-            self.config.sliding_window = 32768
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_id,
-            model_max_length=32768,
-            padding_side="right"
-        )
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_id,
-            config=self.config,
-            torch_dtype=torch.float32 if self.device == "cpu" else torch.float16,
-            device_map="auto" if self.device == "cuda" else None,
-            low_cpu_mem_usage=True
-        )
-
-        if self.device == "cuda":
-            self.model = self.model.to("cuda")
-
-        self.model.eval()
-
-    def generate_stream(
+    def __init__(
         self,
-        messages: List[Dict[str, str]],
-        max_new_tokens: int = 4096,
-        temperature: float = 0.7,
-        top_p: float = 0.9
-    ) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
-        prompt_text = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
+        model_path: str = "models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        repo_id: str = "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        filename: str = "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        n_ctx: int = 4096,
+        n_threads: int = 6
+    ):
+        self.model_path = Path(model_path)
+        self.repo_id = repo_id
+        self.filename = filename
+        
+        # 1. Check if model exists locally; if not, download automatically
+        self._ensure_model_exists()
+
+        # 2. Initialize the Llama engine
+        self.llm = Llama(
+            model_path=str(self.model_path),
+            n_ctx=n_ctx,
+            n_threads=n_threads,
+            verbose=False
         )
 
-        model_inputs = self.tokenizer(
-            [prompt_text],
-            return_tensors="pt",
-            truncation=True,
-            max_length=32768
-        ).to(self.device)
+    def _ensure_model_exists(self):
+        """Checks if local model exists; if not, downloads directly into models/ directory."""
+        if not self.model_path.exists():
+            print(f"\n[MiniMind Engine] Model not found locally at '{self.model_path}'.")
+            print(f"[MiniMind Engine] Downloading {self.filename} from Hugging Face hub...")
+            
+            # Create models/ directory if it does not exist
+            self.model_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Download file into models/ folder
+            downloaded_file = hf_hub_download(
+                repo_id=self.repo_id,
+                filename=self.filename,
+                local_dir=str(self.model_path.parent),
+                local_dir_use_symlinks=False
+            )
+            print(f"[MiniMind Engine] Download complete! Model saved to: {downloaded_file}\n")
 
-        streamer = TextIteratorStreamer(
-            self.tokenizer,
-            timeout=60.0,
-            skip_prompt=True,
-            skip_special_tokens=True
-        )
-
-        generate_kwargs = dict(
-            model_inputs,
-            streamer=streamer,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            do_sample=True if temperature > 0.0 else False,
-            pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=self.tokenizer.eos_token_id
-        )
-
-        thread = Thread(target=self.model.generate, kwargs=generate_kwargs)
-        thread.start()
-
+    def generate_stream(self, messages: list, max_new_tokens: int = 2048, temperature: float = 0.3):
+        """
+        Yields chunks of text as they are generated, along with generation metrics.
+        """
         start_time = time.perf_counter()
         token_count = 0
 
-        for new_text in streamer:
-            token_count += 1
-            elapsed = time.perf_counter() - start_time
-            speed = token_count / elapsed if elapsed > 0 else 0.0
+        response_stream = self.llm.create_chat_completion(
+            messages=messages,
+            max_tokens=max_new_tokens,
+            temperature=temperature,
+            stream=True
+        )
 
-            stats = {
-                "tokens": token_count,
-                "time_sec": elapsed,
-                "speed": speed
-            }
-            yield new_text, stats
-
-        thread.join()
+        for chunk in response_stream:
+            delta = chunk["choices"][0].get("delta", {})
+            content = delta.get("content", "")
+            
+            if content:
+                token_count += 1
+                elapsed = time.perf_counter() - start_time
+                speed = token_count / elapsed if elapsed > 0 else 0.0
+                
+                stats = {
+                    "tokens": token_count,
+                    "time_sec": elapsed,
+                    "speed": speed
+                }
+                yield content, stats
